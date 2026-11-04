@@ -1,0 +1,62 @@
+
+name: Build NX2Apple (iOS IPA)
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios:
+    name: Build iOS IPA
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Homebrew packages
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/Homebrew
+          key: ${{ runner.os }}-brew-xcodegen-${{ hashFiles('**/project.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-brew-xcodegen-
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode Project
+        run: xcodegen generate
+
+      - name: Build Xcode Archive
+        run: |
+          xcodebuild -project NX2Apple.xcodeproj \
+            -scheme NX2Apple-iOS \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath build/NX2Apple.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            archive
+
+      - name: Package Payload to IPA
+        run: |
+          mkdir -p build/Payload
+          cp -R build/NX2Apple.xcarchive/Products/Applications/NX2Apple.app build/Payload/
+          cd build
+          zip -r NX2Apple-iOS-arm64.ipa Payload
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NX2Apple-iOS-arm64
+          path: build/NX2Apple-iOS-arm64.ipa
+          if-no-files-found: error
